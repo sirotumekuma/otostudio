@@ -22,6 +22,7 @@ type Props = {
   project: Project;
   onChange: (updater: (p: Project) => Project) => void;
   onExport?: (format: "wav" | "mp3") => void | Promise<void>;
+  activeMidi?: number | null;
 };
 
 function setupCanvas(canvas: HTMLCanvasElement, w: number, h: number) {
@@ -76,7 +77,7 @@ function NumberField({
   );
 }
 
-export function PianoRoll({ project, onChange, onExport }: Props) {
+export function PianoRoll({ project, onChange, onExport, activeMidi }: Props) {
   const { bpm, beatsPerBar, beatUnit, bars, snap, notes } = project;
   const total = bars * beatsPerBar;
   const gridW = total * BEAT_W;
@@ -86,7 +87,11 @@ export function PianoRoll({ project, onChange, onExport }: Props) {
   const rulerRef = useRef<HTMLCanvasElement>(null);
   const labelsRef = useRef<HTMLCanvasElement>(null);
   const gridRef = useRef<HTMLCanvasElement>(null);
-  const drag = useRef<{ id: string; start: number } | null>(null);
+  const drag = useRef<
+    | { mode: "resize"; id: string; start: number }
+    | { mode: "move"; id: string; start: number; midi: number; pointerBeat: number; pointerMidi: number }
+    | null
+  >(null);
 
   function update(patch: Partial<Project>) {
     onChange((p) => normalizeProject({ ...p, ...patch }));
@@ -96,6 +101,13 @@ export function PianoRoll({ project, onChange, onExport }: Props) {
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = (MAX_MIDI - 78) * ROW_H;
   }, []);
+
+  useEffect(() => {
+    if (scrollRef.current == null || activeMidi == null || activeMidi < MIN_MIDI || activeMidi > MAX_MIDI) return;
+    const y = (MAX_MIDI - activeMidi) * ROW_H;
+    const target = Math.min(Math.max(y - 48, 0), Math.max(0, gridH - 200));
+    scrollRef.current.scrollTop = target;
+  }, [activeMidi, gridH]);
 
   // 上部の小節ルーラー
   useEffect(() => {
@@ -154,6 +166,11 @@ export function PianoRoll({ project, onChange, onExport }: Props) {
       g.fillStyle = midi % 12 === 0 ? "#3d4552" : "#232830";
       g.fillRect(0, y + ROW_H - 1, gridW, 1);
     }
+    if (activeMidi != null && activeMidi >= MIN_MIDI && activeMidi <= MAX_MIDI) {
+      const y = (MAX_MIDI - activeMidi) * ROW_H;
+      g.fillStyle = "rgba(91, 140, 255, 0.18)";
+      g.fillRect(0, y, gridW, ROW_H);
+    }
 
     for (let t = 0; t <= total; t += snap) {
       const x = Math.round(t * BEAT_W);
@@ -173,7 +190,7 @@ export function PianoRoll({ project, onChange, onExport }: Props) {
         g.fillText(noteName(n.midi), x + 5, y + ROW_H - 5);
       }
     }
-  }, [gridW, gridH, total, beatsPerBar, snap, notes]);
+  }, [gridW, gridH, total, beatsPerBar, snap, notes, activeMidi]);
 
   function toCell(e: React.PointerEvent<HTMLCanvasElement>) {
     const r = e.currentTarget.getBoundingClientRect();
@@ -184,12 +201,26 @@ export function PianoRoll({ project, onChange, onExport }: Props) {
   }
 
   function handleDown(e: React.PointerEvent<HTMLCanvasElement>) {
-    if (e.button !== 0) return;
+    if (e.button !== 0 && e.button !== 2) return;
+    e.preventDefault();
     const { beat, midi } = toCell(e);
     if (midi < MIN_MIDI || midi > MAX_MIDI || beat < 0 || beat >= total) return;
 
-    // 既存の音符をクリック → 削除
     const hit = notes.find((n) => n.midi === midi && beat >= n.start && beat < n.start + n.length);
+    if (e.button === 2) {
+      if (!hit) return;
+      drag.current = {
+        mode: "move",
+        id: hit.id,
+        start: hit.start,
+        midi: hit.midi,
+        pointerBeat: beat,
+        pointerMidi: midi,
+      };
+      e.currentTarget.setPointerCapture(e.pointerId);
+      return;
+    }
+
     if (hit) {
       onChange((p) => ({ ...p, notes: p.notes.filter((n) => n.id !== hit.id) }));
       return;
@@ -198,7 +229,7 @@ export function PianoRoll({ project, onChange, onExport }: Props) {
     // 空きをクリック → 追加(そのままドラッグで長さを伸ばせる)
     const start = Math.floor(beat / snap) * snap;
     const id = crypto.randomUUID();
-    drag.current = { id, start };
+    drag.current = { mode: "resize", id, start };
     e.currentTarget.setPointerCapture(e.pointerId);
     onChange((p) => ({
       ...p,
@@ -209,7 +240,20 @@ export function PianoRoll({ project, onChange, onExport }: Props) {
   function handleMove(e: React.PointerEvent<HTMLCanvasElement>) {
     const d = drag.current;
     if (!d) return;
-    const { beat } = toCell(e);
+    const { beat, midi } = toCell(e);
+    if (d.mode === "move") {
+      const current = notes.find((n) => n.id === d.id);
+      if (!current) return;
+      const beatDelta = Math.round((beat - d.pointerBeat) / snap) * snap;
+      const start = Math.max(0, Math.min(total - current.length, d.start + beatDelta));
+      const nextMidi = Math.max(MIN_MIDI, Math.min(MAX_MIDI, d.midi + midi - d.pointerMidi));
+      if (current.start === start && current.midi === nextMidi) return;
+      onChange((p) => ({
+        ...p,
+        notes: p.notes.map((n) => (n.id === d.id ? { ...n, start, midi: nextMidi } : n)),
+      }));
+      return;
+    }
     const end = Math.floor(beat / snap) * snap + snap;
     const length = Math.max(snap, Math.min(end - d.start, total - d.start));
     const cur = notes.find((n) => n.id === d.id);
@@ -282,7 +326,7 @@ export function PianoRoll({ project, onChange, onExport }: Props) {
         >
           全消去
         </button>
-        <span className="kb-hint">クリックで追加/削除・ドラッグで長さを変更</span>
+        <span className="kb-hint">左クリックで追加/削除・左ドラッグで長さ変更・右ドラッグで移動</span>
       </div>
 
       <div className="pr-scroll" ref={scrollRef}>
@@ -303,6 +347,7 @@ export function PianoRoll({ project, onChange, onExport }: Props) {
             onPointerMove={handleMove}
             onPointerUp={endDrag}
             onPointerCancel={endDrag}
+            onContextMenu={(e) => e.preventDefault()}
           />
         </div>
       </div>

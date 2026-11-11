@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Assignments, Mode, Source } from "@/lib/audio/types";
-import { decodeBlob, decodeFile } from "@/lib/audio/decode";
+import { decodeBlob, decodeFile, getAudioContext } from "@/lib/audio/decode";
 import { MIN_MIDI, MAX_MIDI, noteName } from "@/lib/audio/notes";
 import { getMeta, loadSources, removeSource, saveSource, setMeta, updateBase } from "@/lib/db";
 import { SourceList } from "./SourceList";
@@ -10,7 +10,7 @@ import { Keyboard } from "./Keyboard";
 import { Waveform } from "./Waveform";
 import { PianoRoll } from "./PianoRoll";
 import { DEFAULT_PROJECT, normalizeProject, type Project } from "@/lib/project";
-import { prepareVoices, renderProject } from "@/lib/engine";
+import { prepareVoices, renderProject, startPlayback, type Session } from "@/lib/engine";
 import { downloadBlob, encodeMp3, encodeWav } from "@/lib/encode";
 
 const MIDI_OPTIONS = Array.from({ length: MAX_MIDI - MIN_MIDI + 1 }, (_, i) => MIN_MIDI + i);
@@ -32,6 +32,10 @@ export function AppShell() {
   const [restored, setRestored] = useState(false);
   const [project, setProject] = useState<Project>(DEFAULT_PROJECT);
   const [view, setView] = useState<"wave" | "roll">("wave");
+  const [playing, setPlaying] = useState(false);
+  const [activeMidi, setActiveMidi] = useState<number | null>(null);
+  const playbackRef = useRef<Session | null>(null);
+  const playbackTimerRef = useRef<number | null>(null);
 
   const selected = sources.find((s) => s.id === selectedId) ?? null;
 
@@ -158,6 +162,54 @@ export function AppShell() {
     });
   }
 
+  useEffect(() => {
+    return () => {
+      if (playbackTimerRef.current) window.clearTimeout(playbackTimerRef.current);
+      playbackRef.current?.stop(true);
+    };
+  }, []);
+
+  async function handlePlayToggle() {
+    if (playing && playbackRef.current) {
+      if (playbackTimerRef.current) {
+        window.clearTimeout(playbackTimerRef.current);
+        playbackTimerRef.current = null;
+      }
+      playbackRef.current.stop(true);
+      playbackRef.current = null;
+      setPlaying(false);
+      return;
+    }
+
+    if (project.notes.length === 0) {
+      setErrors(["再生する音符がありません。ピアノロールに音符を追加してください。"]);
+      return;
+    }
+
+    try {
+      const voices = await prepareVoices(project, sources);
+      const ctx = getAudioContext();
+      if (ctx.state === "suspended") await ctx.resume();
+      const session = startPlayback(ctx, project, voices, 0);
+      playbackRef.current = session;
+      setPlaying(true);
+
+      const lastNote = project.notes.reduce((max, n) => Math.max(max, n.start + n.length), 0);
+      const durationMs = ((lastNote * 60) / project.bpm + 1.5) * 1000;
+      playbackTimerRef.current = window.setTimeout(() => {
+        if (playbackRef.current === session) {
+          playbackRef.current.stop(false);
+          playbackRef.current = null;
+          setPlaying(false);
+        }
+      }, durationMs);
+    } catch (error) {
+      setErrors([
+        `再生に失敗しました: ${error instanceof Error ? error.message : "不明なエラー"}`,
+      ]);
+    }
+  }
+
   async function handleExport(format: "wav" | "mp3") {
     if (sources.length === 0) {
       setErrors(["音源を先に追加してください。"]);
@@ -206,6 +258,9 @@ export function AppShell() {
           <button className={view === "roll" ? "on" : ""} onClick={() => setView("roll")}>
             ピアノロール
           </button>
+          <button className={`play-btn${playing ? " on" : ""}`} onClick={handlePlayToggle}>
+            {playing ? "停止" : "再生"}
+          </button>
         </div>
         {view === "wave" ? (
           <>
@@ -235,7 +290,12 @@ export function AppShell() {
           <div className="empty">音源を選ぶと波形がここに表示されます</div>
         )}</>
         ) : (
-          <PianoRoll project={project} onChange={setProject} onExport={handleExport} />
+          <PianoRoll
+            project={project}
+            onChange={setProject}
+            onExport={handleExport}
+            activeMidi={activeMidi}
+          />
         )}
       </main>
 
@@ -246,6 +306,8 @@ export function AppShell() {
         sources={sources}
         assignments={assignments}
         onAssign={handleAssign}
+        activeMidi={activeMidi}
+        onMidiFocus={setActiveMidi}
       />
     </div>
   );

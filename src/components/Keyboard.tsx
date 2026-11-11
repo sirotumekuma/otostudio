@@ -17,9 +17,11 @@ type Props = {
   sources: Source[];
   assignments: Assignments;
   onAssign: (midi: number) => void;
+  activeMidi?: number | null;
+  onMidiFocus?: (midi: number | null) => void;
 };
 
-export function Keyboard({ mode, onModeChange, selected, sources, assignments, onAssign }: Props) {
+export function Keyboard({ mode, onModeChange, selected, sources, assignments, onAssign, activeMidi, onMidiFocus }: Props) {
   const active = useRef(new Map<number, NoteHandle>());
   const scrollRef = useRef<HTMLDivElement>(null);
   const [editing, setEditing] = useState(false);
@@ -64,6 +66,7 @@ export function Keyboard({ mode, onModeChange, selected, sources, assignments, o
   }
 
   function down(midi: number) {
+    onMidiFocus?.(midi);
     active.current.get(midi)?.stop();
     if (assigning) {
       if (!selected) return;
@@ -126,11 +129,13 @@ export function Keyboard({ mode, onModeChange, selected, sources, assignments, o
           {keys.map((k) => {
             const name = assignedName(k.midi);
             const isBase = mode === "single" && selected && k.midi === selected.baseMidi;
+            const isActive = activeMidi === k.midi;
             const cls = [
               "key",
               k.black ? "black" : "white",
               isBase ? "base" : "",
               name ? "assigned" : "",
+              isActive ? "active" : "",
             ]
               .filter(Boolean)
               .join(" ");
@@ -141,9 +146,18 @@ export function Keyboard({ mode, onModeChange, selected, sources, assignments, o
                 style={{ left: k.left }}
                 title={name ? `${noteName(k.midi)}: ${name}` : noteName(k.midi)}
                 onPointerDown={() => down(k.midi)}
-                onPointerUp={() => up(k.midi)}
-                onPointerLeave={() => up(k.midi)}
-                onPointerCancel={() => up(k.midi)}
+                onPointerUp={() => {
+                  up(k.midi);
+                  onMidiFocus?.(null);
+                }}
+                onPointerLeave={() => {
+                  up(k.midi);
+                  onMidiFocus?.(null);
+                }}
+                onPointerCancel={() => {
+                  up(k.midi);
+                  onMidiFocus?.(null);
+                }}
               >
                 {!k.black ? name ?? (k.midi % 12 === 0 ? noteName(k.midi) : "") : ""}
               </div>
