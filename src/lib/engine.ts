@@ -120,7 +120,8 @@ export function scheduleNote(
   voice: Voice,
   track: Track,
   when: number,
-  durSec: number
+  durSec: number,
+  offsetSec = 0
 ): AudioBufferSourceNode {
   const src = ctx.createBufferSource();
   src.buffer = voice.buffer;
@@ -131,7 +132,7 @@ export function scheduleNote(
   g.gain.linearRampToValueAtTime(1, when + 0.004);
   src.connect(g);
   g.connect(input);
-  src.start(when);
+  src.start(when, offsetSec);
 
   if (track.gate) {
     const end = when + Math.max(0.02, durSec);
@@ -164,13 +165,27 @@ export function startPlayback(
   const sources: AudioBufferSourceNode[] = [];
 
   for (const n of project.notes) {
-    if (n.start < fromBeat) continue;
     const trackId = n.trackId ?? project.activeTrackId;
     const voice = voices.get(`${trackId}|${n.midi}`);
     const track = trackById.get(trackId);
     const input = graph.inputs.get(trackId);
     if (!voice || !track || !input) continue;
-    sources.push(scheduleNote(ctx, input, voice, track, t0 + (n.start - fromBeat) * secPerBeat, n.length * secPerBeat));
+    const noteDuration = track.gate ? n.length * secPerBeat : voice.buffer.duration / voice.rate;
+    const elapsed = Math.max(0, fromBeat - n.start) * secPerBeat;
+    if (elapsed >= noteDuration) continue;
+    const startBeat = Math.max(n.start, fromBeat);
+    const remaining = noteDuration - elapsed;
+    sources.push(
+      scheduleNote(
+        ctx,
+        input,
+        voice,
+        track,
+        t0 + (startBeat - fromBeat) * secPerBeat,
+        track.gate ? remaining : noteDuration,
+        elapsed
+      )
+    );
   }
 
   return {

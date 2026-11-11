@@ -23,6 +23,8 @@ type Props = {
   onChange: (updater: (p: Project) => Project) => void;
   onExport?: (format: "wav" | "mp3") => void | Promise<void>;
   activeMidi?: number | null;
+  playheadBeat?: number;
+  transport?: "stopped" | "playing" | "paused";
 };
 
 function setupCanvas(canvas: HTMLCanvasElement, w: number, h: number) {
@@ -77,7 +79,14 @@ function NumberField({
   );
 }
 
-export function PianoRoll({ project, onChange, onExport, activeMidi }: Props) {
+export function PianoRoll({
+  project,
+  onChange,
+  onExport,
+  activeMidi,
+  playheadBeat = 0,
+  transport = "stopped",
+}: Props) {
   const { bpm, beatsPerBar, beatUnit, bars, snap, notes } = project;
   const total = bars * beatsPerBar;
   const gridW = total * BEAT_W;
@@ -108,6 +117,16 @@ export function PianoRoll({ project, onChange, onExport, activeMidi }: Props) {
     const target = Math.min(Math.max(y - 48, 0), Math.max(0, gridH - 200));
     scrollRef.current.scrollTop = target;
   }, [activeMidi, gridH]);
+
+  useEffect(() => {
+    const scroll = scrollRef.current;
+    if (scroll == null || transport !== "playing") return;
+    const x = playheadBeat * BEAT_W;
+    const left = scroll.scrollLeft;
+    const right = left + scroll.clientWidth;
+    if (x > right - 40) scroll.scrollLeft = Math.min(x - scroll.clientWidth * 0.25, gridW - scroll.clientWidth);
+    else if (x < left + 40) scroll.scrollLeft = Math.max(0, x - 40);
+  }, [playheadBeat, transport, gridW]);
 
   // 上部の小節ルーラー
   useEffect(() => {
@@ -340,15 +359,24 @@ export function PianoRoll({ project, onChange, onExport, activeMidi }: Props) {
           <div className="pr-corner" />
           <canvas ref={rulerRef} className="pr-ruler" />
           <canvas ref={labelsRef} className="pr-labels" />
-          <canvas
-            ref={gridRef}
-            className="pr-grid"
-            onPointerDown={handleDown}
-            onPointerMove={handleMove}
-            onPointerUp={endDrag}
-            onPointerCancel={endDrag}
-            onContextMenu={(e) => e.preventDefault()}
-          />
+          <div className="pr-grid-wrap">
+            <canvas
+              ref={gridRef}
+              className="pr-grid"
+              onPointerDown={handleDown}
+              onPointerMove={handleMove}
+              onPointerUp={endDrag}
+              onPointerCancel={endDrag}
+              onContextMenu={(e) => e.preventDefault()}
+            />
+            <div
+              className={`pr-playhead${transport === "paused" ? " paused" : ""}`}
+              style={{
+                left: `${Math.min(gridW, Math.max(0, playheadBeat * BEAT_W))}px`,
+                visibility: transport !== "stopped" || playheadBeat > 0 ? "visible" : "hidden",
+              }}
+            />
+          </div>
         </div>
       </div>
     </div>

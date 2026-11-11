@@ -82,8 +82,11 @@ body {
 .tabs { display: flex; gap: 4px; margin-bottom: 10px; align-items: center; }
 .tabs button { background: var(--panel-2); color: var(--muted); border: 1px solid var(--border); border-radius: 8px; padding: 5px 14px; font-size: 13px; cursor: pointer; font-family: inherit; }
 .tabs button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
-.play-btn { margin-left: auto; background: rgba(91, 140, 255, 0.16); border-color: var(--accent); color: var(--text); }
-.play-btn.on { background: #9b2c2c; border-color: #d66; }
+.transport { display: flex; align-items: center; gap: 6px; margin-left: auto; }
+.transport button { background: var(--panel-2); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 5px 10px; font-size: 13px; cursor: pointer; font-family: inherit; }
+.transport button.play-btn { background: rgba(91, 140, 255, 0.16); border-color: var(--accent); }
+.transport button:disabled { opacity: .45; cursor: default; }
+.transport-position { color: var(--muted); font-size: 12px; min-width: 90px; text-align: right; }
 .pr { display: flex; flex-direction: column; flex: 1; min-height: 0; gap: 8px; }
 .pr-toolbar { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; color: var(--muted); font-size: 13px; }
 .pr-toolbar label { display: flex; align-items: center; gap: 6px; }
@@ -99,4 +102,9 @@ body {
 .pr-corner { position: sticky; top: 0; left: 0; z-index: 3; background: var(--panel-2); }
 .pr-ruler { position: sticky; top: 0; z-index: 2; display: block; }
 .pr-labels { position: sticky; left: 0; z-index: 2; display: block; }
+.pr-grid-wrap { position: relative; }
 .pr-grid { display: block; cursor: crosshair; touch-action: none; }
+.pr-playhead { position: absolute; z-index: 1; top: 0; bottom: 0; width: 2px; background: #ff5f68; pointer-events: none; }
+.pr-playhead::before { content: ""; position: absolute; top: 0; left: -4px; border-left: 5px solid transparent; border-right: 5px solid transparent; border-top: 7px solid #ff5f68; }
+.pr-playhead.paused { background: #ffbd4a; }
+.pr-playhead.paused::before { border-top-color: #ffbd4a; }

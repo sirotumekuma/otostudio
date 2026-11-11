@@ -32,10 +32,12 @@ export function AppShell() {
   const [restored, setRestored] = useState(false);
   const [project, setProject] = useState<Project>(DEFAULT_PROJECT);
   const [view, setView] = useState<"wave" | "roll">("wave");
-  const [playing, setPlaying] = useState(false);
+  const [transport, setTransport] = useState<"stopped" | "playing" | "paused">("stopped");
+  const [preparingPlayback, setPreparingPlayback] = useState(false);
+  const [playheadBeat, setPlayheadBeat] = useState(0);
   const [activeMidi, setActiveMidi] = useState<number | null>(null);
   const playbackRef = useRef<Session | null>(null);
-  const playbackTimerRef = useRef<number | null>(null);
+  const animationFrameRef = useRef<number | null>(null);
 
   const selected = sources.find((s) => s.id === selectedId) ?? null;
 
@@ -164,50 +166,123 @@ export function AppShell() {
 
   useEffect(() => {
     return () => {
-      if (playbackTimerRef.current) window.clearTimeout(playbackTimerRef.current);
+      if (animationFrameRef.current !== null) window.cancelAnimationFrame(animationFrameRef.current);
       playbackRef.current?.stop(true);
     };
   }, []);
 
-  async function handlePlayToggle() {
-    if (playing && playbackRef.current) {
-      if (playbackTimerRef.current) {
-        window.clearTimeout(playbackTimerRef.current);
-        playbackTimerRef.current = null;
-      }
-      playbackRef.current.stop(true);
-      playbackRef.current = null;
-      setPlaying(false);
-      return;
-    }
+  function getPlaybackProject(): Project {
+    return {
+      ...project,
+      tracks: project.tracks.map((track) =>
+        track.id === project.activeTrackId
+          ? {
+              ...track,
+              mode,
+              sourceId: selectedId,
+              assignments,
+            }
+          : track
+      ),
+    };
+  }
 
+  async function startFrom(beat: number) {
     if (project.notes.length === 0) {
       setErrors(["再生する音符がありません。ピアノロールに音符を追加してください。"]);
       return;
     }
 
+    setPreparingPlayback(true);
     try {
-      const voices = await prepareVoices(project, sources);
+      const playbackProject = getPlaybackProject();
+      const voices = await prepareVoices(playbackProject, sources);
+      if (voices.size === 0) {
+        throw new Error(
+          mode === "single"
+            ? "音源一覧から音源を選択してから再生してください。"
+            : "鍵盤の「割り当て編集」をONにして、音符の鍵盤に音源を割り当ててください。"
+        );
+      }
       const ctx = getAudioContext();
       if (ctx.state === "suspended") await ctx.resume();
-      const session = startPlayback(ctx, project, voices, 0);
+      const session = startPlayback(ctx, playbackProject, voices, beat);
       playbackRef.current = session;
-      setPlaying(true);
+      setTransport("playing");
+      setView("roll");
 
-      const lastNote = project.notes.reduce((max, n) => Math.max(max, n.start + n.length), 0);
-      const durationMs = ((lastNote * 60) / project.bpm + 1.5) * 1000;
-      playbackTimerRef.current = window.setTimeout(() => {
-        if (playbackRef.current === session) {
-          playbackRef.current.stop(false);
+      const totalBeats = playbackProject.bars * playbackProject.beatsPerBar;
+      const tick = () => {
+        if (playbackRef.current !== session) return;
+        const current = Math.min(
+          totalBeats,
+          session.fromBeat + Math.max(0, ctx.currentTime - session.startTime) / session.secPerBeat
+        );
+        setPlayheadBeat(current);
+        if (current >= totalBeats) {
+          session.stop(false);
           playbackRef.current = null;
-          setPlaying(false);
+          animationFrameRef.current = null;
+          setTransport("stopped");
+          return;
         }
-      }, durationMs);
+        animationFrameRef.current = window.requestAnimationFrame(tick);
+      };
+      animationFrameRef.current = window.requestAnimationFrame(tick);
     } catch (error) {
       setErrors([
         `再生に失敗しました: ${error instanceof Error ? error.message : "不明なエラー"}`,
       ]);
+    } finally {
+      setPreparingPlayback(false);
     }
+  }
+
+  function handlePlay() {
+    const beat = transport === "paused" ? playheadBeat : 0;
+    void startFrom(beat);
+  }
+
+  function handleRestart() {
+    if (animationFrameRef.current !== null) {
+      window.cancelAnimationFrame(animationFrameRef.current);
+      animationFrameRef.current = null;
+    }
+    playbackRef.current?.stop(true);
+    playbackRef.current = null;
+    setPlayheadBeat(0);
+    setTransport("stopped");
+    void startFrom(0);
+  }
+
+  function handlePause() {
+    const session = playbackRef.current;
+    if (!session) return;
+    const ctx = getAudioContext();
+    const totalBeats = project.bars * project.beatsPerBar;
+    const current = Math.min(
+      totalBeats,
+      session.fromBeat + Math.max(0, ctx.currentTime - session.startTime) / session.secPerBeat
+    );
+    if (animationFrameRef.current !== null) {
+      window.cancelAnimationFrame(animationFrameRef.current);
+      animationFrameRef.current = null;
+    }
+    session.stop(true);
+    playbackRef.current = null;
+    setPlayheadBeat(current);
+    setTransport("paused");
+  }
+
+  function handleStop() {
+    if (animationFrameRef.current !== null) {
+      window.cancelAnimationFrame(animationFrameRef.current);
+      animationFrameRef.current = null;
+    }
+    playbackRef.current?.stop(true);
+    playbackRef.current = null;
+    setPlayheadBeat(0);
+    setTransport("stopped");
   }
 
   async function handleExport(format: "wav" | "mp3") {
@@ -221,8 +296,9 @@ export function AppShell() {
     }
 
     try {
-      const voices = await prepareVoices(project, sources);
-      const rendered = await renderProject(project, sources, voices);
+      const exportProject = getPlaybackProject();
+      const voices = await prepareVoices(exportProject, sources);
+      const rendered = await renderProject(exportProject, sources, voices);
       const blob = format === "wav" ? encodeWav(rendered) : await encodeMp3(rendered, 192);
       downloadBlob(blob, `otostudio-${Date.now()}.${format === "wav" ? "wav" : "mp3"}`);
     } catch (error) {
@@ -258,9 +334,23 @@ export function AppShell() {
           <button className={view === "roll" ? "on" : ""} onClick={() => setView("roll")}>
             ピアノロール
           </button>
-          <button className={`play-btn${playing ? " on" : ""}`} onClick={handlePlayToggle}>
-            {playing ? "停止" : "再生"}
-          </button>
+          <div className="transport">
+            <button onClick={handleRestart} disabled={preparingPlayback} title="最初から再生">
+              ⏮ はじめから
+            </button>
+            <button className="play-btn" onClick={handlePlay} disabled={preparingPlayback || transport === "playing"} title={transport === "paused" ? "再開" : "最初から再生"}>
+              {preparingPlayback ? "準備中…" : transport === "paused" ? "▶ 再開" : "▶ 再生"}
+            </button>
+            <button onClick={handlePause} disabled={preparingPlayback || transport !== "playing"} title="一時停止">
+              ⏸ 一時停止
+            </button>
+            <button onClick={handleStop} disabled={preparingPlayback || (transport === "stopped" && playheadBeat === 0)} title="停止して最初に戻る">
+              停止
+            </button>
+            <span className="transport-position">
+              {Math.floor(playheadBeat / project.beatsPerBar) + 1}小節目 ・ {Math.floor(playheadBeat % project.beatsPerBar) + 1}拍目
+            </span>
+          </div>
         </div>
         {view === "wave" ? (
           <>
@@ -295,6 +385,8 @@ export function AppShell() {
             onChange={setProject}
             onExport={handleExport}
             activeMidi={activeMidi}
+            playheadBeat={playheadBeat}
+            transport={transport}
           />
         )}
       </main>
