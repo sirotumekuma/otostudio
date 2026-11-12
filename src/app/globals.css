@@ -92,6 +92,11 @@ body {
 .pr-toolbar label { display: flex; align-items: center; gap: 6px; }
 .pr-filter, .pr-filter label { display: flex; align-items: center; gap: 6px; }
 .pr-filter { flex-wrap: wrap; }
+.pr-transpose { display: flex; align-items: center; gap: 6px; }
+.pr-transpose button { background: var(--panel-2); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 3px 8px; cursor: pointer; }
+.pr-transpose button:disabled { opacity: .45; cursor: default; }
+.pr-transpose output { min-width: 46px; text-align: center; color: var(--text); }
+.pr-transpose input[type="range"] { width: 96px; padding: 0; accent-color: var(--accent); }
 .pr-filter-message { color: var(--muted); font-size: 12px; }
 .pr-toolbar input[type="number"] { width: 64px; }
 .pr-toolbar input, .pr-toolbar select, .pr-clear, .pr-export { background: var(--panel-2); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px; font-family: inherit; }

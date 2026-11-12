@@ -33,7 +33,7 @@ export async function prepareVoices(project: Project, sources: Source[]): Promis
     const r = resolveSource(t, n.midi, sources);
     if (!r) continue;
 
-    const semis = n.midi - r.base;
+    const semis = n.midi - r.base + project.transpose;
     const rate = Math.pow(2, semis / 12);
     if (t.stretch && semis !== 0) {
       voices.set(key, { buffer: getStretched(`${r.source.id}|${semis}`, r.source.buffer, rate), rate });

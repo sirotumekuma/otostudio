@@ -16,12 +16,13 @@ type Props = {
   selected: Source | null;
   sources: Source[];
   assignments: Assignments;
+  transpose: number;
   onAssign: (midi: number) => void;
   activeMidi?: number | null;
   onMidiFocus?: (midi: number | null) => void;
 };
 
-export function Keyboard({ mode, onModeChange, selected, sources, assignments, onAssign, activeMidi, onMidiFocus }: Props) {
+export function Keyboard({ mode, onModeChange, selected, sources, assignments, transpose, onAssign, activeMidi, onMidiFocus }: Props) {
   const active = useRef(new Map<number, NoteHandle>());
   const scrollRef = useRef<HTMLDivElement>(null);
   const [editing, setEditing] = useState(false);
@@ -71,12 +72,12 @@ export function Keyboard({ mode, onModeChange, selected, sources, assignments, o
     if (assigning) {
       if (!selected) return;
       onAssign(midi);
-      active.current.set(midi, playNote(selected.buffer, midi, midi)); // 試し聞き
+      active.current.set(midi, playNote(selected.buffer, midi + transpose, midi)); // 試し聞き
       return;
     }
     const r = resolve(midi);
     if (!r) return;
-    active.current.set(midi, playNote(r.buffer, midi, r.base));
+    active.current.set(midi, playNote(r.buffer, midi + transpose, r.base));
   }
 
   function up(midi: number) {
@@ -92,7 +93,9 @@ export function Keyboard({ mode, onModeChange, selected, sources, assignments, o
 
   let hint = "";
   if (mode === "single") {
-    hint = selected ? `${noteName(selected.baseMidi)}で元の音程` : "音源を選ぶと弾けます";
+    hint = selected
+      ? `${noteName(selected.baseMidi)}で元の音程${transpose === 0 ? "" : `・移調 ${transpose > 0 ? "+" : ""}${transpose}`}`
+      : "音源を選ぶと弾けます";
   } else if (editing) {
     hint = selected
       ? `「${selected.name}」を鍵盤クリックで割り当て(割り当て済みをもう一度クリックで解除)`

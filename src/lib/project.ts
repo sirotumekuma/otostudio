@@ -34,6 +34,7 @@ export type Project = {
   beatUnit: number; // 拍子の分母
   bars: number; // 小節数
   snap: number; // グリッド幅(拍)
+  transpose: number; // 再生時の移調(半音)
   notes: Note[];
   tracks: Track[];
   activeTrackId: string;
@@ -68,6 +69,7 @@ export const DEFAULT_PROJECT: Project = {
   beatUnit: 4,
   bars: 8,
   snap: 0.25,
+  transpose: 0,
   notes: [],
   tracks: [createTrack("track-1", "Track 1")],
   activeTrackId: "track-1",
@@ -152,6 +154,7 @@ export function normalizeProject(p: Partial<Project>): Project {
     beatUnit,
     bars,
     snap,
+    transpose: clamp(Math.round(num(p.transpose, 0)), -12, 12),
     notes,
     tracks,
     activeTrackId,

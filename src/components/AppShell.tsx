@@ -446,6 +446,7 @@ export function AppShell() {
         selected={selected}
         sources={sources}
         assignments={assignments}
+        transpose={project.transpose}
         onAssign={handleAssign}
         activeMidi={activeMidi}
         onMidiFocus={setActiveMidi}

@@ -89,7 +89,7 @@ export function PianoRoll({
   playheadBeat = 0,
   transport = "stopped",
 }: Props) {
-  const { bpm, beatsPerBar, beatUnit, bars, snap, notes } = project;
+  const { bpm, beatsPerBar, beatUnit, bars, snap, transpose, notes } = project;
   const total = bars * beatsPerBar;
   const gridW = total * BEAT_W;
   const gridH = ROWS * ROW_H;
@@ -355,6 +355,35 @@ export function PianoRoll({
           BPM
           <NumberField value={bpm} min={20} max={300} onCommit={(v) => update({ bpm: v })} />
         </label>
+        <div className="pr-transpose">
+          <span>移調</span>
+          <button
+            type="button"
+            aria-label="半音下げる"
+            disabled={transpose <= -12}
+            onClick={() => update({ transpose: transpose - 1 })}
+          >
+            −
+          </button>
+          <output>{transpose > 0 ? `+${transpose}` : transpose} 半音</output>
+          <button
+            type="button"
+            aria-label="半音上げる"
+            disabled={transpose >= 12}
+            onClick={() => update({ transpose: transpose + 1 })}
+          >
+            ＋
+          </button>
+          <input
+            type="range"
+            aria-label="移調"
+            min={-12}
+            max={12}
+            step={1}
+            value={transpose}
+            onChange={(e) => update({ transpose: Number(e.target.value) })}
+          />
+        </div>
         <label>
           拍子
           <select
