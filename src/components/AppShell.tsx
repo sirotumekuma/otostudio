@@ -9,9 +9,10 @@ import { SourceList } from "./SourceList";
 import { Keyboard } from "./Keyboard";
 import { Waveform } from "./Waveform";
 import { PianoRoll } from "./PianoRoll";
-import { DEFAULT_PROJECT, normalizeProject, type Project } from "@/lib/project";
+import { DEFAULT_PROJECT, maxBars, normalizeProject, type Project } from "@/lib/project";
 import { prepareVoices, renderProject, startPlayback, type Session } from "@/lib/engine";
 import { downloadBlob, encodeMp3, encodeWav } from "@/lib/encode";
+import { isMidiPitchInRange, parseMidiFile } from "@/lib/midi";
 
 const MIDI_OPTIONS = Array.from({ length: MAX_MIDI - MIN_MIDI + 1 }, (_, i) => MIN_MIDI + i);
 
@@ -308,6 +309,53 @@ export function AppShell() {
     }
   }
 
+  async function handleImportMidi(file: File) {
+    try {
+      const midi = parseMidiFile(await file.arrayBuffer());
+      const bars = Math.min(
+        maxBars(midi.beatsPerBar),
+        Math.max(1, Math.ceil(midi.durationBeats / midi.beatsPerBar))
+      );
+      const totalBeats = bars * midi.beatsPerBar;
+      const importedNotes = midi.notes
+        .filter((note) => isMidiPitchInRange(note.midi) && note.start < totalBeats)
+        .map((note) => ({
+          id: crypto.randomUUID(),
+          midi: note.midi,
+          start: note.start,
+          length: Math.min(note.length, totalBeats - note.start),
+          trackId: project.activeTrackId,
+        }));
+      const skipped = midi.notes.length - importedNotes.length;
+      if (importedNotes.length === 0) {
+        throw new Error("アプリの音域または読み込み可能な長さに含まれる音符がありません。");
+      }
+
+      setProject((current) =>
+        normalizeProject({
+          ...current,
+          bpm: Math.min(300, Math.max(20, Math.round(midi.bpm))),
+          beatsPerBar: midi.beatsPerBar,
+          beatUnit: midi.beatUnit,
+          bars,
+          notes: importedNotes,
+        })
+      );
+      setView("roll");
+      const warnings: string[] = [];
+      if (skipped > 0) {
+        warnings.push(`${skipped}個の音符はアプリの音域または長さの上限を超えるため読み込みませんでした。`);
+      }
+      if (midi.tempoChanges > 1) warnings.push("テンポ変更が含まれていますが、最初のテンポのみ適用しました。");
+      if (midi.timeSignatureChanges > 1) warnings.push("拍子変更が含まれていますが、最初の拍子のみ適用しました。");
+      setErrors(warnings);
+    } catch (error) {
+      setErrors([
+        `MIDIを読み込めませんでした: ${error instanceof Error ? error.message : "不明なエラー"}`,
+      ]);
+    }
+  }
+
   return (
     <div className="app">
       <header className="header">
@@ -383,6 +431,7 @@ export function AppShell() {
           <PianoRoll
             project={project}
             onChange={setProject}
+            onImportMidi={handleImportMidi}
             onExport={handleExport}
             activeMidi={activeMidi}
             playheadBeat={playheadBeat}

@@ -94,6 +94,7 @@ body {
 .pr-toolbar input, .pr-toolbar select, .pr-clear, .pr-export { background: var(--panel-2); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px; font-family: inherit; }
 .pr-actions { display: flex; gap: 8px; margin-left: auto; }
 .pr-export { cursor: pointer; color: var(--text); border-color: var(--accent); background: rgba(91, 140, 255, 0.12); }
+.pr-export:disabled { opacity: .45; cursor: default; }
 .pr-export.alt { border-color: #4ec9a8; background: rgba(78, 201, 168, 0.12); }
 .pr-clear { cursor: pointer; color: var(--muted); }
 .pr-clear:hover { color: #ffb4bd; border-color: #6b2f37; }

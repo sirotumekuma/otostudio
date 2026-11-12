@@ -21,6 +21,7 @@ const SNAP_OPTIONS = [
 type Props = {
   project: Project;
   onChange: (updater: (p: Project) => Project) => void;
+  onImportMidi?: (file: File) => void | Promise<void>;
   onExport?: (format: "wav" | "mp3") => void | Promise<void>;
   activeMidi?: number | null;
   playheadBeat?: number;
@@ -82,6 +83,7 @@ function NumberField({
 export function PianoRoll({
   project,
   onChange,
+  onImportMidi,
   onExport,
   activeMidi,
   playheadBeat = 0,
@@ -93,6 +95,7 @@ export function PianoRoll({
   const gridH = ROWS * ROW_H;
 
   const scrollRef = useRef<HTMLDivElement>(null);
+  const midiInputRef = useRef<HTMLInputElement>(null);
   const rulerRef = useRef<HTMLCanvasElement>(null);
   const labelsRef = useRef<HTMLCanvasElement>(null);
   const gridRef = useRef<HTMLCanvasElement>(null);
@@ -287,6 +290,26 @@ export function PianoRoll({
   return (
     <div className="pr">
       <div className="pr-toolbar">
+        <button
+          className="pr-export"
+          disabled={!onImportMidi}
+          onClick={() => midiInputRef.current?.click()}
+        >
+          MIDI読み込み
+        </button>
+        <input
+          ref={midiInputRef}
+          type="file"
+          accept=".mid,.midi,audio/midi,audio/x-midi"
+          hidden
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (file && (notes.length === 0 || window.confirm("現在の音符を置き換えてMIDIを読み込みますか?"))) {
+              void onImportMidi?.(file);
+            }
+            e.target.value = "";
+          }}
+        />
         <label>
           BPM
           <NumberField value={bpm} min={20} max={300} onCommit={(v) => update({ bpm: v })} />
