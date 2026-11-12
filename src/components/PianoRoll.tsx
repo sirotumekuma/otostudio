@@ -96,6 +96,8 @@ export function PianoRoll({
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const midiInputRef = useRef<HTMLInputElement>(null);
+  const [removeBelowMidi, setRemoveBelowMidi] = useState(48);
+  const [filterMessage, setFilterMessage] = useState("");
   const rulerRef = useRef<HTMLCanvasElement>(null);
   const labelsRef = useRef<HTMLCanvasElement>(null);
   const gridRef = useRef<HTMLCanvasElement>(null);
@@ -287,6 +289,21 @@ export function PianoRoll({
     drag.current = null;
   }
 
+  function removeNotesAtOrBelowLimit() {
+    const count = notes.filter((note) => note.midi <= removeBelowMidi).length;
+    if (count === 0) {
+      setFilterMessage("該当する音符はありません。");
+      return;
+    }
+    if (!window.confirm(`${noteName(removeBelowMidi)}以下の音符を${count}個除去しますか?`)) return;
+
+    onChange((p) => ({
+      ...p,
+      notes: p.notes.filter((note) => note.midi > removeBelowMidi),
+    }));
+    setFilterMessage(`${count}個の音符を除去しました。`);
+  }
+
   return (
     <div className="pr">
       <div className="pr-toolbar">
@@ -310,6 +327,30 @@ export function PianoRoll({
             e.target.value = "";
           }}
         />
+        <div className="pr-filter">
+          <label>
+            音域
+            <select
+              aria-label="除去する音の下限"
+              value={removeBelowMidi}
+              onChange={(e) => {
+                setRemoveBelowMidi(Number(e.target.value));
+                setFilterMessage("");
+              }}
+            >
+              {Array.from({ length: MAX_MIDI - MIN_MIDI + 1 }, (_, i) => MIN_MIDI + i).map((midi) => (
+                <option key={midi} value={midi}>
+                  {noteName(midi)}
+                </option>
+              ))}
+            </select>
+            以下を除去
+          </label>
+          <button className="pr-clear" onClick={removeNotesAtOrBelowLimit}>
+            適用
+          </button>
+        </div>
+        {filterMessage && <span className="pr-filter-message" role="status">{filterMessage}</span>}
         <label>
           BPM
           <NumberField value={bpm} min={20} max={300} onCommit={(v) => update({ bpm: v })} />
